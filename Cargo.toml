@@ -1,0 +1,17 @@
+[package]
+name = "annotate-image"
+version = "0.1.0"
+authors = ["Brendan Ball <ball.brendan50@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "lib_annotate_image"
+path = "src/lib.rs"
+
+[dependencies]
+rexif = "0.5.0"
+image = "0.23.9"
+imageproc = "0.21.0"
+rusttype = "0.9.2"
+thiserror = "1.0.20"
+anyhow = "1.0.32"
