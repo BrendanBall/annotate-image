@@ -1,6 +1,12 @@
 use rexif::{ExifError, ExifTag, TagValue};
 use thiserror::Error;
 
+use image::{DynamicImage, imageops, Rgba, load_from_memory, ImageError, ImageOutputFormat};
+use imageproc::drawing::draw_text_mut;
+use rusttype::{Font, Scale};
+use std::io::prelude::*;
+use std::io;
+
 #[derive(Error, Debug)]
 pub enum AnnotateImageError {
     #[error("the attribute for `{0}` was not found")]
@@ -71,4 +77,57 @@ pub fn get_orientation(buffer: &[u8]) -> Result<Orientation, AnnotateImageError>
             Err(AnnotateImageError::Unknown(e.to_string()))
         }
     }
+}
+
+impl From<ImageError> for AnnotateImageError {
+    fn from(err: ImageError) -> Self {
+        AnnotateImageError::Unknown(err.to_string())
+    }
+}
+
+impl From<io::Error> for AnnotateImageError {
+    fn from(err: io::Error) -> Self {
+        AnnotateImageError::Unknown(err.to_string())
+    }
+}
+
+pub fn annotate_image<R: Read, W: Write>(source: &mut R, mut destination: &mut W, text: Option<String>, font: &Font) -> Result<(), AnnotateImageError> {
+    let mut source_buffer: Vec<u8> = Vec::new();
+    source.read_to_end(&mut source_buffer)?;
+    let orientation =  get_orientation(&source_buffer)?;
+    let timestamp = get_timestamp(&source_buffer)?; 
+    let image = &load_from_memory(&source_buffer)?;
+
+    let text : String = match text {
+        Some(t) => t,
+        None => timestamp
+    };
+   
+    let mut image = match orientation {
+        Orientation::RotatedLeft => imageops::rotate90(image),
+        Orientation::RotatedRight => imageops::rotate270(image),
+        Orientation::UpsideDown => imageops::rotate180(image),
+        _ => image.to_rgba(),
+    };
+    
+    let (width, height) = image.dimensions();
+    let max = width.max(height);
+
+    let scale = Scale {
+        x: max as f32 / 20.0,
+        y: max as f32 / 20.0,
+    };
+    draw_text_mut(
+        &mut image,
+        Rgba([0u8, 0u8, 0u8, 0u8]),
+        max / 100,
+        max / 100,
+        scale,
+        font,
+        &text,
+    );
+
+    let image = DynamicImage::ImageRgba8(image);
+    image.write_to(&mut destination, ImageOutputFormat::Jpeg(u8::MAX))?;
+    Ok(())
 }
