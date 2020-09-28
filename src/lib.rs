@@ -62,15 +62,11 @@ pub fn get_orientation(buffer: &[u8]) -> Result<Orientation, AnnotateImageError>
                     return Ok(orientation);
                 }
             }
-            Err(AnnotateImageError::AttributeNotFound(
-                ExifTag::DateTime.to_string(),
-            ))
+            Ok(Orientation::Undefined)
         }
         Err(e) => {
             if let ExifError::JpegWithoutExif(_) = e {
-                return Err(AnnotateImageError::AttributeNotFound(
-                    ExifTag::DateTime.to_string(),
-                ));
+             return Ok(Orientation::Undefined)
             }
             Err(AnnotateImageError::Unknown(e.to_string()))
         }

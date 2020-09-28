@@ -1,8 +1,10 @@
 #[macro_use]
 extern crate anyhow;
 
-use std::env;
 use std::fs;
+
+use std::path::PathBuf;
+use structopt::StructOpt;
 
 use anyhow::Result;
 use image::imageops;
@@ -12,20 +14,35 @@ use imageproc::drawing::draw_text_mut;
 use lib_annotate_image::{get_orientation, get_timestamp, Orientation};
 use rusttype::{Font, Scale};
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "Annotate Image", about = "Annotate an image. By default it annotates the timestamp")]
+struct Opt {
+    /// Annotate text
+    #[structopt(short, long, required_if("timestamp", "false"))]
+    text: Option<String>,
+
+    /// Source image file
+    #[structopt(parse(from_os_str))]
+    source: PathBuf,
+
+    /// Destination image file
+    #[structopt(parse(from_os_str))]
+    destination: PathBuf,
+}
+
 fn main() -> Result<()> {
-    let (source, target) = if env::args().count() == 3 {
-        (env::args().nth(1).unwrap(), env::args().nth(2).unwrap())
-    } else {
-        return Err(anyhow!("Please enter a source and target file path"));
+    let opt = Opt::from_args();
+    let file_buffer = fs::read(opt.source)?;
+    let text : String = match opt.text {
+        Some(t) => t,
+        None => get_timestamp(&file_buffer)?
     };
-    process_image(source, target)?;
+    process_image(&file_buffer, opt.destination, text)?;
     Ok(())
 }
 
-fn process_image(source: String, target: String) -> Result<()> {
-    let file_buffer = fs::read(source)?;
-    let timestamp = get_timestamp(&file_buffer)?;
-    let orientation = get_orientation(&file_buffer)?;
+fn process_image(file_buffer: &[u8], target: PathBuf, text: String) -> Result<()> {
+    let orientation =  get_orientation(&file_buffer)?;
     let image = load_from_memory(&file_buffer)?;
 
     let mut image = match orientation {
@@ -52,7 +69,7 @@ fn process_image(source: String, target: String) -> Result<()> {
         max / 100,
         scale,
         &font,
-        &timestamp,
+        &text,
     );
 
     image.save(&target)?;
