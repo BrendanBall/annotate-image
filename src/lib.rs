@@ -1,11 +1,11 @@
 use rexif::{ExifError, ExifTag, TagValue};
 use thiserror::Error;
 
-use image::{DynamicImage, imageops, Rgba, load_from_memory, ImageError, ImageOutputFormat};
+use image::{imageops, load_from_memory, DynamicImage, ImageError, ImageOutputFormat, Rgba};
 use imageproc::drawing::draw_text_mut;
 use rusttype::{Font, Scale};
-use std::io::prelude::*;
 use std::io;
+use std::io::prelude::*;
 
 #[derive(Error, Debug)]
 pub enum AnnotateImageError {
@@ -72,7 +72,7 @@ pub fn get_orientation(buffer: &[u8]) -> Result<Orientation, AnnotateImageError>
         }
         Err(e) => {
             if let ExifError::JpegWithoutExif(_) = e {
-             return Ok(Orientation::Undefined)
+                return Ok(Orientation::Undefined);
             }
             Err(AnnotateImageError::Unknown(e.to_string()))
         }
@@ -91,25 +91,29 @@ impl From<io::Error> for AnnotateImageError {
     }
 }
 
-pub fn annotate_image<R: Read, W: Write>(source: &mut R, mut destination: &mut W, text: Option<String>, font: &Font) -> Result<(), AnnotateImageError> {
+pub fn annotate_image<R: Read, W: Write>(
+    source: &mut R,
+    mut destination: &mut W,
+    text: Option<String>,
+    font: &Font,
+) -> Result<(), AnnotateImageError> {
     let mut source_buffer: Vec<u8> = Vec::new();
     source.read_to_end(&mut source_buffer)?;
-    let orientation =  get_orientation(&source_buffer)?;
-    let timestamp = get_timestamp(&source_buffer)?; 
+    let orientation = get_orientation(&source_buffer)?;
     let image = &load_from_memory(&source_buffer)?;
 
-    let text : String = match text {
+    let text: String = match text {
         Some(t) => t,
-        None => timestamp
+        None => get_timestamp(&source_buffer)?,
     };
-   
+
     let mut image = match orientation {
         Orientation::RotatedLeft => imageops::rotate90(image),
         Orientation::RotatedRight => imageops::rotate270(image),
         Orientation::UpsideDown => imageops::rotate180(image),
         _ => image.to_rgba(),
     };
-    
+
     let (width, height) = image.dimensions();
     let max = width.max(height);
 
