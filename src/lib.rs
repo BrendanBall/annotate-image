@@ -132,6 +132,7 @@ pub fn annotate_image<R: Read, W: Write>(
     );
 
     let image = DynamicImage::ImageRgba8(image);
-    image.write_to(&mut destination, ImageOutputFormat::Jpeg(u8::MAX))?;
+    let image = image.resize(1000, 1000, imageops::FilterType::Lanczos3);
+    image.write_to(&mut destination, ImageOutputFormat::Jpeg(80))?;
     Ok(())
 }
