@@ -1,4 +1,4 @@
-use rexif::{ExifError, ExifTag, TagValue};
+use rexif::{ExifError, ExifTag, TagValue, ExifData};
 use thiserror::Error;
 
 use image::{imageops, load_from_memory, DynamicImage, ImageError, ImageOutputFormat, Rgba};
@@ -7,35 +7,15 @@ use rusttype::{Font, Scale};
 use std::io;
 use std::io::prelude::*;
 
+
 #[derive(Error, Debug)]
 pub enum AnnotateImageError {
     #[error("the attribute for `{0}` was not found")]
     AttributeNotFound(String),
+    #[error("the image has no metadata")]
+    NoMetadata,
     #[error("unknown annotate image error")]
     Unknown(String),
-}
-
-pub fn get_timestamp(buffer: &[u8]) -> Result<String, AnnotateImageError> {
-    match rexif::parse_buffer(&buffer) {
-        Ok(exif) => {
-            for entry in &exif.entries {
-                if entry.tag == ExifTag::DateTime {
-                    return Ok(entry.value_more_readable.clone());
-                }
-            }
-            Err(AnnotateImageError::AttributeNotFound(
-                ExifTag::DateTime.to_string(),
-            ))
-        }
-        Err(e) => {
-            if let ExifError::JpegWithoutExif(_) = e {
-                return Err(AnnotateImageError::AttributeNotFound(
-                    ExifTag::DateTime.to_string(),
-                ));
-            }
-            Err(AnnotateImageError::Unknown(e.to_string()))
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -47,36 +27,56 @@ pub enum Orientation {
     Undefined,
 }
 
-pub fn get_orientation(buffer: &[u8]) -> Result<Orientation, AnnotateImageError> {
-    match rexif::parse_buffer(&buffer) {
-        Ok(exif) => {
-            for entry in &exif.entries {
-                if entry.tag == ExifTag::Orientation {
-                    let orientation = match entry.value {
-                        TagValue::U16(ref v) => {
-                            let n = v[0];
-                            match n {
-                                1 => Orientation::Straight,
-                                3 => Orientation::UpsideDown,
-                                6 => Orientation::RotatedLeft,
-                                8 => Orientation::RotatedRight,
-                                _ => Orientation::Undefined,
-                            }
-                        }
-                        _ => panic!("Invalid data for this tag"),
-                    };
-                    return Ok(orientation);
+struct ImageMetadata(ExifData);
+
+impl ImageMetadata {
+
+    pub fn new(buffer: &[u8]) -> Result<Option<Self>, AnnotateImageError> {
+        match rexif::parse_buffer(&buffer) {
+            Ok(exif) => {
+                Ok(Some(Self(exif)))
+            },
+            Err(e) => {
+                if let ExifError::JpegWithoutExif(_) = e {
+                return Ok(None)
                 }
+                Err(AnnotateImageError::Unknown(e.to_string()))
             }
-            Ok(Orientation::Undefined)
-        }
-        Err(e) => {
-            if let ExifError::JpegWithoutExif(_) = e {
-                return Ok(Orientation::Undefined);
-            }
-            Err(AnnotateImageError::Unknown(e.to_string()))
         }
     }
+
+    pub fn timestamp(&self) -> Result<String, AnnotateImageError> {
+        for entry in &self.0.entries {
+            if entry.tag == ExifTag::DateTime {
+                return Ok(entry.value_more_readable.clone());
+            }
+        }
+        Err(AnnotateImageError::AttributeNotFound(
+            ExifTag::DateTime.to_string(),
+        ))
+    } 
+    
+    pub fn orientation(&self) -> Result<Orientation, AnnotateImageError> {
+        for entry in &self.0.entries {
+            if entry.tag == ExifTag::Orientation {
+                let orientation = match entry.value {
+                    TagValue::U16(ref v) => {
+                        let n = v[0];
+                        match n {
+                            1 => Orientation::Straight,
+                            3 => Orientation::UpsideDown,
+                            6 => Orientation::RotatedLeft,
+                            8 => Orientation::RotatedRight,
+                            _ => Orientation::Undefined,
+                        }
+                    }
+                    _ => panic!("Invalid data for this tag"),
+                };
+                return Ok(orientation);
+            }
+        }
+        Ok(Orientation::Undefined)
+    } 
 }
 
 impl From<ImageError> for AnnotateImageError {
@@ -99,14 +99,21 @@ pub fn annotate_image<R: Read, W: Write>(
 ) -> Result<(), AnnotateImageError> {
     let mut source_buffer: Vec<u8> = Vec::new();
     source.read_to_end(&mut source_buffer)?;
-    let orientation = get_orientation(&source_buffer)?;
-    let image = &load_from_memory(&source_buffer)?;
-
-    let text: String = match text {
+    let image_metadata =  ImageMetadata::new(&source_buffer)?;
+    let orientation = match &image_metadata {
+        Some(m) => m.orientation() ,
+        None => Ok(Orientation::Undefined),
+    }?;
+    let text : String = match text {
         Some(t) => t,
-        None => get_timestamp(&source_buffer)?,
+        None => match &image_metadata {
+            Some(m) => m.timestamp() ,
+            None => Err(AnnotateImageError::AttributeNotFound(ExifTag::DateTime.to_string())),
+        }?
     };
-
+    
+    let image = &load_from_memory(&source_buffer)?;
+   
     let mut image = match orientation {
         Orientation::RotatedLeft => imageops::rotate90(image),
         Orientation::RotatedRight => imageops::rotate270(image),

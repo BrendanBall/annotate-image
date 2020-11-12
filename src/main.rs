@@ -46,6 +46,7 @@ fn main() -> Result<()> {
     let font = Font::try_from_vec(font).ok_or(anyhow!("font doesn't exist"))?;
 
     let mut source_file = BufReader::new(File::open(opt.source)?);
+    // TODO if annotate_image fails, an empty file is still left
     let mut destination_file = BufWriter::new(File::create(opt.destination)?);
 
     annotate_image(&mut source_file, &mut destination_file, opt.text, &font)?;
